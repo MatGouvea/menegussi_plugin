@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <title>Explodir Componente</title>
+  <style>
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background-color: #3A4A40;
+      font-family: Arial, sans-serif;
+      color: white;
+      box-sizing: border-box;
+    }
+
+    .slider-container {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    #slider {
+      flex: 1;
+    }
+
+    #slider-value {
+      width: 30px;
+      text-align: right;
+      font-weight: bold;
+    }
+
+    .slider-wrapper {
+      width: 100%;
+      margin-bottom: 10px;
+    }
+
+    .slider-label {
+      display: block;
+      margin-bottom: 5px;
+      text-align: left;
+      font-size: 14px;
+      letter-spacing: 1px;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+      /* margem interna */
+    }
+
+    #slider {
+      width: 100%;
+      margin-bottom: 20px;
+      accent-color: white;
+    }
+
+    .button-container {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      width: 100%;
+    }
+
+    button {
+      flex: 1;
+      padding: 10px 0;
+      background-color: transparent;
+      border: 1px solid white;
+      color: white;
+      font-size: 14px;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: transform 0.1s ease-in-out;
+    }
+
+    button:hover {
+      transform: scale(1.05);
+    }
+  </style>
+</head>
+
+<body>
+  <div class="slider-wrapper">
+    <label for="slider" class="slider-label">TAMANHO:</label>
+    <div class="slider-container">
+      <input type="range" min="0" max="20" value="10" id="slider">
+      <span id="slider-value">10</span>
+    </div>
+  </div>
+
+
+  <div class="button-container">
+    <button onclick="explode()">Aplicar</button>
+    <button onclick="restore()">Restaurar</button>
+  </div>
+
+  <script>
+    const slider = document.getElementById('slider');
+    const sliderValue = document.getElementById('slider-value');
+
+    // Atualiza valor inicial
+    sliderValue.textContent = slider.value;
+
+    slider.oninput = () => {
+      sliderValue.textContent = slider.value;
+    };
+
+    function explode() {
+      window.sketchup.explode(slider.value);
+    }
+
+    function restore() {
+      window.sketchup.restore();
+    }
+  </script>
+</body>
+
+</html>
