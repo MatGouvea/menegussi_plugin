@@ -25,6 +25,49 @@
       box-sizing: border-box;
     }
 
+    /*---------------------------------------- Capa -----------------------------------------*/
+
+    .page.capa {
+      width: 794px;
+      height: 1123px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      align-items: center;
+      padding: 0px;
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+
+    .titulo-componente {
+      font-size: 50px;
+      font-weight: bold;
+      margin-bottom: 5px;
+      text-align: center;
+      color: #333;
+    }
+
+    .titulo-ambiente {
+      font-size: 35px;
+      text-align: center;
+      color: #555;
+    }
+
+    .footer-logo {
+      width: 100%;
+      display: flex;
+      justify-content: center;
+    }
+
+    .footer-logo img {
+      max-width: 80%;
+      object-fit: contain;
+    }
+
+
+    /*-----------------------------------------------------------------------------------------*/
+
     .page {
       width: 794px;
       height: 1123px;
@@ -34,7 +77,13 @@
       flex-direction: column;
       justify-content: space-between;
       padding: 0;
+      min-height: 100%;
     }
+
+    .page+.page {
+      page-break-before: always;
+    }
+
 
     .images {
       flex-grow: 1;
@@ -44,26 +93,19 @@
       margin-bottom: 10px;
     }
 
-    .main img {
+    .main {
+      flex-grow: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       width: 100%;
-      height: 70%;
-      max-height: 70%;
-      /* Limita altura para 70% da página */
-      object-fit: cover;
-      /* Ajusta a imagem para cobrir sem distorcer */
-      border: none;
-      /* Sem borda ou sombra */
     }
 
-    .side {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 10px;
-      width: 100%;
-      box-sizing: border-box;
-      padding: 0;
-      margin: 0;
+    .main img {
+      max-width: 100%;
+      max-height: 80%;
+      object-fit: contain;
+      border: none;
     }
 
     .image-wrapper {
@@ -86,7 +128,7 @@
     .label {
       position: absolute;
       top: 10px;
-      left: 80px;
+      left: 60px;
       transform: translateX(-50%);
       background-color: #444;
       color: white;
@@ -97,20 +139,14 @@
       z-index: 2;
     }
 
-
-    /* Retângulo na área inferior */
-    .footer {
-      height: 30%;
-      background-color: #3A4A40;
-      color: white;
-      font-size: 14px;
-      text-align: left;
+    .grid-views {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: auto auto;
+      gap: 10px;
       padding: 20px;
-      position: relative;
-      border-top-left-radius: 25px;
-      border-bottom-right-radius: 25px;
-      margin-top: 10px;
-      /* Afastar um pouco do conteúdo acima */
+      width: 100%;
+      box-sizing: border-box;
     }
 
     /* Esconde o botão de impressão no PDF */
@@ -123,6 +159,22 @@
 </head>
 
 <body>
+  <div class="page capa">
+    <div class="titulo-componente">{{NOME_COMPONENTE}}</div>
+    <div class="titulo-ambiente">{{NOME_AMBIENTE}}</div>
+
+    <div class="main" style="flex-direction: column; gap: 0
+    ;">
+      <img src="{{COVER_IMAGE_2}}" alt="Vista sem Portas" style="max-width: 70%;">
+      <img src="{{COVER_IMAGE}}" alt="Vista com Portas" style="max-width: 70%;">
+    </div>
+
+    <div class="footer-logo">
+      <img src="{{FOOTER_IMAGE}}" alt="Logo">
+    </div>
+  </div>
+
+
   <div class="page">
     <!-- Botão para exportar para PDF -->
     <button onclick="window.print()" class="no-print" style="
@@ -143,22 +195,23 @@
       </div>
     </div>
 
-    <div class="side">
-      <!-- Imagem da Vista Frontal com Etiqueta -->
+    <div class="grid-views">
       <div class="image-wrapper">
         <img src="{{FRONT_IMAGE}}" alt="Vista Frontal">
-        <div class="label">V. Frontal</div>
+        <div class="label">Frente</div>
       </div>
-
-      <!-- Imagem da Vista Traseira com Etiqueta -->
       <div class="image-wrapper">
         <img src="{{BACK_IMAGE}}" alt="Vista Traseira">
-        <div class="label">V. Traseira</div>
+        <div class="label">Trás</div>
       </div>
-    </div>
-
-    <!-- Retângulo Inferior -->
-    <div class="footer">
+      <div class="image-wrapper">
+        <img src="{{BACK_ISO_IMAGE}}" alt="Vista ISO Traseira">
+        <div class="label">Costas</div>
+      </div>
+      <div class="image-wrapper">
+        <img src="{{BACK_CORNER_IMAGE}}" alt="Canto Traseiro">
+        <div class="label">Lateral</div>
+      </div>
     </div>
   </div>
 </body>
