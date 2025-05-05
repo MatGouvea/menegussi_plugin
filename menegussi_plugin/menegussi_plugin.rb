@@ -182,29 +182,19 @@ module MenegussiPlugin
     def self.restore_entity_and_children(entity)
       return unless entity.is_a?(Sketchup::Group) || entity.is_a?(Sketchup::ComponentInstance)
     
-      # Restaura transformação, se houver
       offset_array = entity.get_attribute("MenegussiPlugin", "explosion_offset")
       if offset_array.is_a?(Array) && offset_array.size == 3
         offset_vector = Geom::Vector3d.new(offset_array)
         inverse_offset = offset_vector.reverse
         entity.transform!(Geom::Transformation.translation(inverse_offset))
-        entity.delete_attribute("MenegussiPlugin", "explosion_offset")
+        # entity.delete_attribute("MenegussiPlugin", "explosion_offset")  <--- comente esta linha
       end
     
-      # Restaura os filhos recursivamente
-      if entity.respond_to?(:definition)
-        child_entities = entity.definition.entities
-      else
-        child_entities = entity.entities
-      end
-    
-      child_entities.each do |child|
-        restore_entity_and_children(child)
-      end
+      child_entities = entity.respond_to?(:definition) ? entity.definition.entities : entity.entities
+      child_entities.each { |child| restore_entity_and_children(child) }
     end
     
-
-
+    
     def self.restore_transforms
       model = Sketchup.active_model
       selection = model.selection
@@ -221,6 +211,31 @@ module MenegussiPlugin
     # ---------------------------------------- Função 2: Gerar Relatório --------------------------------
 
     # --------------------------------- Captura as imagens para o relatório -----------------------------
+
+
+    def self.reapply_explosions(component)
+      def self.reapply_offset_recursively(entity)
+        if entity.is_a?(Sketchup::ComponentInstance) || entity.is_a?(Sketchup::Group)
+          offset_array = entity.get_attribute("MenegussiPlugin", "explosion_offset")
+          if offset_array.is_a?(Array) && offset_array.size == 3
+            offset_vector = Geom::Vector3d.new(offset_array)
+            entity.transform!(Geom::Transformation.translation(offset_vector))
+          end
+    
+          # Reaplica nos filhos
+          child_entities = if entity.respond_to?(:definition)
+                             entity.definition.entities
+                           else
+                             entity.entities
+                           end
+    
+          child_entities.each { |child| reapply_offset_recursively(child) }
+        end
+      end
+    
+      reapply_offset_recursively(component)
+    end
+
 
     def self.create_camera(position_vector, target, up)
       Sketchup::Camera.new(target.offset(position_vector), target, up)
@@ -278,7 +293,7 @@ module MenegussiPlugin
       door_layer.visible = true if door_layer
     
       # === 2. Explosão + afastar portas ===
-      self.explode_selected(explosion_distance)
+      self.reapply_explosions(component)
       self.move_doors_laterally(component, explosion_distance)
       self.generate_gbsflagged_texts(component)
     
