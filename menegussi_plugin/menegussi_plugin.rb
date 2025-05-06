@@ -24,8 +24,11 @@ module MenegussiPlugin
       }
 
       report_cmd = UI::Command.new("Gerar Relatório") {
-        puts "Botão de relatório foi clicado"
         self.show_report_preview
+      }
+
+      assembly_cmd = UI::Command.new("Gerar Manual de Montagem") {
+        self.show_viewer_window
       }
 
 
@@ -42,17 +45,28 @@ module MenegussiPlugin
         report_cmd.large_icon = report_icon
       end
 
+      assembly_icon = File.join(__dir__, "assembly_icon.png") 
+      if File.exist?(assembly_icon)
+        assembly_cmd.small_icon = assembly_icon
+        assembly_cmd.large_icon = assembly_icon
+      end
+
 
       cmd.tooltip = "Explodir Componente"
       cmd.status_bar_text = "Visualizar partes do componente separadas."
       cmd.menu_text = "Explodir Componente"
 
       report_cmd.tooltip = "Gerar Relatório"
-      report_cmd.status_bar_text = "Gera um relatório de montagem com o componente selecionado."
+      report_cmd.status_bar_text = "Gera um relatório de vistas com o componente selecionado."
       report_cmd.menu_text = "Gerar Relatório"
 
-      toolbar.add_item(report_cmd)
+      assembly_cmd.tooltip = "Gerar Manual de Montagem"
+      assembly_cmd.status_bar_text = "Gera um manual de montagem com o componente selecionado."
+      assembly_cmd.menu_text = "Gerar Manual de Montagem"
+
       toolbar.add_item(cmd)
+      toolbar.add_item(report_cmd)
+      toolbar.add_item(assembly_cmd)
       toolbar.show
 
       @ui_loaded = true
@@ -522,6 +536,112 @@ module MenegussiPlugin
       dialog.show
     end
 
+
+
+    # ==================================================================================================
+
+
+
+
+
+
+
+    # ======================================= Gerar Manual de Montagem =================================
+
+
+
+
+
+    def self.show_viewer_window
+      model = Sketchup.active_model
+      sel = model.selection
+      unless sel.length == 1 && (sel.first.is_a?(Sketchup::ComponentInstance) || sel.first.is_a?(Sketchup::Group))
+        UI.messagebox("Selecione um componente ou grupo.")
+        return
+      end
+
+      # Exportar geometria como JSON
+      geometry = extract_groups(sel.first)
+
+      # Criar a janela
+      dlg = UI::HtmlDialog.new(
+        dialog_title: "Visualizador de Componente",
+        width: 800,
+        height: 600,
+        style: UI::HtmlDialog::STYLE_DIALOG
+      )
+
+      # Enviar dados para o front-end
+      html_path = File.join(__dir__, "viewer.html")
+      dlg.set_file(html_path)
+      dlg.add_action_callback("request_geometry") do |action_context|
+        dlg.execute_script("loadGroupedGeometry(#{geometry.to_json})")
+      end
+
+      dlg.show
+    end
+
+    def self.extract_geometry(instance)
+      triangles = []
+    
+      traverse_entities(instance.definition.entities, instance.transformation, triangles)
+    
+      triangles
+    end
+    
+    
+    def self.traverse_entities(entities, parent_transform, triangles, parent_hidden = false)
+      entities.each do |e|
+        next if parent_hidden
+        next if e.hidden?
+        next if e.respond_to?(:layer) && !e.layer.visible?
+    
+        case e
+        when Sketchup::Face
+          mesh = e.mesh
+          mesh.polygons.each do |poly|
+            tri = poly.map do |index|
+              pt = mesh.point_at(index.abs).transform(parent_transform)
+              [pt.x.to_f, pt.y.to_f, pt.z.to_f]
+            end
+            triangles << tri if tri.size == 3
+          end
+        when Sketchup::ComponentInstance, Sketchup::Group
+          combined_transform = parent_transform * e.transformation
+          traverse_entities(e.definition.entities, combined_transform, triangles, parent_hidden)
+        end
+      end
+    end
+    
+
+    def self.extract_groups(instance)
+      parts = []
+      collect_parts(instance.definition.entities, instance.transformation, parts)
+      parts
+    end
+    
+    def self.collect_parts(entities, parent_transform, parts, parent_hidden = false)
+      entities.each do |e|
+        layer_invisible = e.respond_to?(:layer) && !e.layer.visible?
+        hidden = parent_hidden || e.hidden? || layer_invisible
+    
+        if e.is_a?(Sketchup::Group) || e.is_a?(Sketchup::ComponentInstance)
+          # Se estiver invisível, nem percorre os filhos
+          next if hidden
+    
+          triangles = []
+          combined_transform = parent_transform * e.transformation
+          traverse_entities(e.definition.entities, combined_transform, triangles, hidden)
+    
+          parts << { hidden: hidden, triangles: triangles } unless triangles.empty?
+          
+          # Continua a recursão (passando visibilidade atual)
+          collect_parts(e.definition.entities, combined_transform, parts, hidden)
+        end
+      end
+    end
+    
+    
     self.create_menu_and_toolbar
   end
 end

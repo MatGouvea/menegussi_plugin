@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&icon_names=transition_fade" />
+    <meta charset="utf-8">
+    <title>Visualizador de Componente</title>
+    <script src="three.min.js"></script>
+    <style>
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            height: 100%;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Estilo para o botão de toggle */
+        #toggleButton {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            padding: 8px;
+            background-color: lightgrey;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            cursor: pointer;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #toggleButton:hover {
+            background-color: #3A4A40;
+        }
+
+        #explodeSlider {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 100;
+            width: 200px;
+            background: #ddd;
+            height: 24px;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="viewer"></canvas>
+    <button id="toggleButton"><span class="material-symbols-outlined">
+            transition_fade
+        </span></button>
+    <input type="range" id="explodeSlider" min="0" max="200" value="0">
+
+    <script>
+        const canvas = document.getElementById('viewer');
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xffffff);
+
+        const aspect = window.innerWidth / window.innerHeight;
+        const camera = new THREE.OrthographicCamera(
+            -400 * aspect, 400 * aspect,
+            400, -400,
+            1, 5000
+        );
+        camera.position.set(300, 300, 300);
+        camera.lookAt(0, 0, 0);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.target.set(0, 0, 0);
+        controls.update();
+
+        let isXRayMode = false;
+        let explodedMeshes = [];
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+        scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.6);
+        directionalLight.position.set(1, 2, 3);
+        scene.add(directionalLight);
+
+        function loadGroupedGeometry(groups) {
+            console.log("Dados recebidos:", groups.map(g => g.hidden));
+
+            // Limpa cena
+            while (scene.children.length > 0) scene.remove(scene.children[0]);
+            scene.add(ambientLight);
+            scene.add(directionalLight);
+            explodedMeshes = [];
+
+            const mainGroup = new THREE.Group();
+
+            groups.forEach(
+                part => {
+                if (part.hidden) return;
+
+                const triangles = part.triangles;
+                const vertices = [];
+                triangles.forEach(tri => {
+                    tri.forEach(([x, y, z]) => {
+                        vertices.push(x, y, z);
+                    });
+                });
+
+                const geometry = new THREE.BufferGeometry();
+                geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+                geometry.computeVertexNormals();
+                geometry.rotateX(-Math.PI / 2);
+
+                const mesh = new THREE.Mesh(
+                    geometry,
+                    new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide })
+                );
+
+                const edges = new THREE.EdgesGeometry(geometry, 1);
+                const lines = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
+
+                const pieceGroup = new THREE.Group();
+                pieceGroup.add(mesh);
+                pieceGroup.add(lines);
+
+                const center = new THREE.Box3().setFromObject(pieceGroup).getCenter(new THREE.Vector3());
+                const direction = center.clone().normalize();
+                pieceGroup.userData = { direction };
+
+                explodedMeshes.push(pieceGroup);
+                mainGroup.add(pieceGroup);
+            });
+
+            scene.add(mainGroup);
+            console.log("Peças carregadas:", explodedMeshes.length);
+            explodedMeshes.forEach((g, i) => {
+                const box = new THREE.Box3().setFromObject(g);
+                console.log(`Peça ${i}:`, box.min, box.max);
+            });
+
+
+            // Centraliza câmera
+            const bbox = new THREE.Box3().setFromObject(mainGroup);
+            const center = bbox.getCenter(new THREE.Vector3());
+            const size = bbox.getSize(new THREE.Vector3());
+            const maxDim = Math.max(size.x, size.y, size.z);
+            const frustumSize = maxDim * 1.5;
+
+            camera.left = (-frustumSize * aspect) / 2;
+            camera.right = (frustumSize * aspect) / 2;
+            camera.top = frustumSize / 2;
+            camera.bottom = -frustumSize / 2;
+            camera.near = -5000;
+            camera.far = 5000;
+            camera.updateProjectionMatrix();
+
+            camera.position.set(center.x + maxDim * 0.8, center.y - maxDim * 0.8, center.z + maxDim * 0.6);
+            controls.target.copy(center);
+            controls.update();
+
+            animate();
+        }
+
+
+
+        function applyExplosion(factor) {
+            explodedMeshes.forEach(group => {
+                const dir = group.userData.direction;
+                group.position.copy(dir.clone().multiplyScalar(factor));
+            });
+        }
+
+
+        function toggleXRay() {
+            isXRayMode = !isXRayMode;
+            explodedMeshes.forEach(group => {
+                group.children.forEach(obj => {
+                    if (obj instanceof THREE.Mesh) {
+                        obj.material = new THREE.MeshBasicMaterial({
+                            color: 0xffffff,
+                            side: THREE.DoubleSide,
+                            transparent: isXRayMode,
+                            opacity: isXRayMode ? 0.15 : 1,
+                            depthWrite: !isXRayMode
+                        });
+                    }
+                });
+            });
+        }
+
+        document.getElementById("toggleButton").addEventListener("click", toggleXRay);
+        document.getElementById("explodeSlider").addEventListener("input", (e) => {
+            const value = parseFloat(e.target.value);
+            applyExplosion(value / 10); // escala da explosão
+        });
+
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.render(scene, camera);
+        }
+
+        // Recebe dados do SketchUp
+        window.onload = () => {
+            if (window.sketchup && sketchup.request_geometry) {
+                sketchup.request_geometry();
+            } else {
+                console.error("SketchUp interface não disponível.");
+            }
+        };
+    </script>
+</body>
+
+</html>
