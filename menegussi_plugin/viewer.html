@@ -22,44 +22,109 @@
             height: 100%;
         }
 
-        /* Estilo para o botão de toggle */
-        #toggleButton {
+        #interfaceContainer {
             position: absolute;
             bottom: 20px;
-            right: 20px;
-            padding: 8px;
-            background-color: lightgrey;
-            color: white;
-            border: none;
-            border-radius: 10px;
-            font-size: 16px;
-            cursor: pointer;
-            justify-content: center;
+            right: -25px;
+            display: flex;
+            flex-direction: row;
+            align-items: flex-end;
+            gap: 10px;
+            z-index: 100;
+        }
+
+        /* Bloco com slider, ícone e botão */
+        #controlsContainer {
+            display: flex;
+            flex-direction: column;
             align-items: center;
         }
 
-        #toggleButton:hover {
-            background-color: #3A4A40;
+        #explodeSlider {
+            writing-mode: bt-lr;
+            -webkit-appearance: slider-vertical;
+            appearance: slider-vertical;
+            height: 150px;
+            margin-bottom: 30px;
+            margin-top: 10px;
+            accent-color: #3A4A40;
         }
 
-        #explodeSlider {
-            position: absolute;
-            bottom: 20px;
-            left: 20px;
-            z-index: 100;
-            width: 200px;
-            background: #ddd;
+        /* Botão de XRay */
+        #toggleButton {
+            background-color: #fff;
+            border: 1px solid #ccc;
+            border-radius: 10px;
+            padding: 6px;
+            cursor: pointer;
+            color: #333;
+        }
+
+        #toggleButton.active {
+            background-color: #d4d4d4;
+            border: 1px solid #8c8c8c;
+        }
+
+        /* Botões de câmera */
+        #cameraButtons {
+            display: flex;
+            flex-direction: row;
+        }
+
+        .camera-btn img {
+            width: 24px;
             height: 24px;
+        }
+
+        .camera-btn {
+            width: 40px;
+            height: 40px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            /* igual ao botão de XRay */
+            padding: 6px;
+            border: 1px solid #ccc;
+            background-color: #fff;
+            transition: background-color 0.3s;
+        }
+
+        .camera-btn:hover {
+            background-color: #f0f0f0;
+        }
+
+        .camera-btn:first-child {
+            border-radius: 10px 0 0 10px;
+        }
+
+        .camera-btn:last-child {
+            border-radius: 0 10px 10px 0;
         }
     </style>
 </head>
 
 <body>
     <canvas id="viewer"></canvas>
-    <button id="toggleButton"><span class="material-symbols-outlined">
-            transition_fade
-        </span></button>
-    <input type="range" id="explodeSlider" min="0" max="200" value="0">
+    <div id="interfaceContainer">
+        <div id="cameraButtons">
+            <button title="Vista Isométrica" id="isoButton" class="camera-btn"><img src="iso.png"
+                    style="width: 24px;"></button>
+            <button title="Vista Frente" id="frontButton" class="camera-btn"><img src="frente.png"
+                    style="width: 24px;"></button>
+            <button title="Vista Trás" id="backButton" class="camera-btn"><img src="tras.png"
+                    style="width: 24px;"></button>
+        </div>
+
+        <div id="controlsContainer">
+            <img src="dimensions.png" style="width: 20px;">
+            <input type="range" id="explodeSlider" min="0" max="250" value="0">
+            <button title="Ver Através" id="toggleButton">
+                <img src="cube.png" style="width: 24px;">
+            </button>
+        </div>
+    </div>
+
+
 
     <script>
         const canvas = document.getElementById('viewer');
@@ -88,8 +153,10 @@
         const directionalLight = new THREE.DirectionalLight(0xffffff, 0.6);
         directionalLight.position.set(1, 2, 3);
         scene.add(directionalLight);
+        let explosionOrigin = new THREE.Vector3();
 
-        function loadGroupedGeometry(groups) {
+        function loadGroupedGeometry(data) {
+            const groups = data.parts;
             console.log("Dados recebidos:", groups.map(g => g.hidden));
 
             // Limpa cena
@@ -100,8 +167,7 @@
 
             const mainGroup = new THREE.Group();
 
-            groups.forEach(
-                part => {
+            groups.forEach(part => {
                 if (part.hidden) return;
 
                 const triangles = part.triangles;
@@ -139,11 +205,14 @@
 
             scene.add(mainGroup);
             console.log("Peças carregadas:", explodedMeshes.length);
-            explodedMeshes.forEach((g, i) => {
-                const box = new THREE.Box3().setFromObject(g);
-                console.log(`Peça ${i}:`, box.min, box.max);
-            });
 
+            // Calcular o bounding box total das peças e definir o centro da explosão
+            const totalBox = new THREE.Box3();
+            explodedMeshes.forEach(group => {
+                const box = new THREE.Box3().setFromObject(group);
+                totalBox.union(box);
+            });
+            explosionOrigin.copy(totalBox.getCenter(new THREE.Vector3()));
 
             // Centraliza câmera
             const bbox = new THREE.Box3().setFromObject(mainGroup);
@@ -152,6 +221,7 @@
             const maxDim = Math.max(size.x, size.y, size.z);
             const frustumSize = maxDim * 1.5;
 
+            // Atualiza os parâmetros ortográficos da câmera
             camera.left = (-frustumSize * aspect) / 2;
             camera.right = (frustumSize * aspect) / 2;
             camera.top = frustumSize / 2;
@@ -160,25 +230,36 @@
             camera.far = 5000;
             camera.updateProjectionMatrix();
 
-            camera.position.set(center.x + maxDim * 0.8, center.y - maxDim * 0.8, center.z + maxDim * 0.6);
+            // Define uma posição isométrica confortável
+            const distance = size.length() * 1.2;
+            const offset = new THREE.Vector3(1, 1, 1).normalize().multiplyScalar(distance);
+            camera.position.copy(center.clone().add(offset));
+
+            // Foca no centro do modelo
             controls.target.copy(center);
             controls.update();
+
 
             animate();
         }
 
-
-
         function applyExplosion(factor) {
             explodedMeshes.forEach(group => {
-                const dir = group.userData.direction;
-                group.position.copy(dir.clone().multiplyScalar(factor));
+                // Direção do centro da peça até o centro total da peça (explosionOrigin)
+                const center = new THREE.Box3().setFromObject(group).getCenter(new THREE.Vector3());
+                const dir = new THREE.Vector3().subVectors(center, explosionOrigin).normalize();
+
+                group.position.copy(dir.multiplyScalar(factor));
             });
         }
 
 
         function toggleXRay() {
             isXRayMode = !isXRayMode;
+
+            const button = document.getElementById("toggleButton");
+            button.classList.toggle("active", isXRayMode); // <-- aqui
+
             explodedMeshes.forEach(group => {
                 group.children.forEach(obj => {
                     if (obj instanceof THREE.Mesh) {
@@ -194,11 +275,15 @@
             });
         }
 
+
         document.getElementById("toggleButton").addEventListener("click", toggleXRay);
         document.getElementById("explodeSlider").addEventListener("input", (e) => {
             const value = parseFloat(e.target.value);
-            applyExplosion(value / 10); // escala da explosão
+            applyExplosion(value / 10); // valor direto, já invertido pelo min/max
         });
+
+
+
 
         function animate() {
             requestAnimationFrame(animate);
@@ -214,6 +299,54 @@
                 console.error("SketchUp interface não disponível.");
             }
         };
+
+
+
+        function setCameraView(direction) {
+            if (!controls || !camera || !scene) return;
+
+            // Calcular o centro real do modelo
+            const box = new THREE.Box3().setFromObject(scene);
+            const center = box.getCenter(new THREE.Vector3());
+            const size = box.getSize(new THREE.Vector3()).length();
+            const distance = size * 1.2; // distância confortável com margem
+
+            let offset;
+
+            switch (direction) {
+                case "iso":
+                    offset = new THREE.Vector3(1, 1, 1).normalize().multiplyScalar(distance);
+                    break;
+                case "front":
+                    offset = new THREE.Vector3(0, 0, 1).multiplyScalar(distance);
+                    break;
+                case "back":
+                    offset = new THREE.Vector3(0, 0, -1).multiplyScalar(distance);
+                    break;
+                default:
+                    return;
+            }
+
+            camera.position.copy(center.clone().add(offset));
+            controls.target.copy(center); // centraliza o foco da órbita
+            camera.lookAt(center);
+            controls.update();
+        }
+
+
+        document.getElementById('isoButton').addEventListener('click', () => {
+            setCameraView('iso');
+        });
+
+        document.getElementById('frontButton').addEventListener('click', () => {
+            setCameraView('front');
+        });
+
+        document.getElementById('backButton').addEventListener('click', () => {
+            setCameraView('back');
+        });
+
+
     </script>
 </body>
 

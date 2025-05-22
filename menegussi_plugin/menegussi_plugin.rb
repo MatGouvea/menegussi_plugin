@@ -615,10 +615,76 @@ module MenegussiPlugin
     
 
     def self.extract_groups(instance)
+      voyager_root = find_voyager(instance)
+
+      unless voyager_root
+        UI.messagebox("Não foi encontrado nenhum componente com 'voyager' no nome.")
+        return []
+      end
+
       parts = []
-      collect_parts(instance.definition.entities, instance.transformation, parts)
-      parts
+      centers = []
+
+      all_boxes_centers = []
+
+      voyager_root.definition.entities.each do |child|
+        next unless child.is_a?(Sketchup::ComponentInstance) || child.is_a?(Sketchup::Group)
+        next if child.hidden?
+        next if child.respond_to?(:layer) && !child.layer.visible?
+
+        triangles = []
+        transform = voyager_root.transformation * child.transformation
+        traverse_entities(child.definition.entities, transform, triangles)
+
+        unless triangles.empty?
+          # Bounding box em coordenadas globais
+          original_box = child.bounds
+          transformed_box = Geom::BoundingBox.new
+          8.times do |i|
+            pt = original_box.corner(i)
+            transformed_box.add(pt.transform(transform))
+          end
+          all_boxes_centers << transformed_box.center.to_a
+
+          parts << { hidden: false, triangles: triangles }
+        end
+      end
+
+      # Calcula centro médio das peças visíveis
+      if all_boxes_centers.empty?
+        voyager_center = [0, 0, 0]
+      else
+        sum = [0.0, 0.0, 0.0]
+        all_boxes_centers.each do |c|
+          sum[0] += c[0]
+          sum[1] += c[1]
+          sum[2] += c[2]
+        end
+        count = all_boxes_centers.size.to_f
+        voyager_center = [sum[0]/count, sum[1]/count, sum[2]/count]
+      end
+
+      { parts: parts, origin: voyager_center }
     end
+
+
+
+    def self.find_voyager(entity)
+      if entity.is_a?(Sketchup::ComponentInstance) || entity.is_a?(Sketchup::Group)
+        def_name = entity.definition.name.downcase
+        return entity if def_name.include?('voyager')
+
+        entity.definition.entities.each do |child|
+          next unless child.is_a?(Sketchup::ComponentInstance) || child.is_a?(Sketchup::Group)
+          result = find_voyager(child)
+          return result if result
+        end
+      end
+
+      nil
+    end
+
+
     
     def self.collect_parts(entities, parent_transform, parts, parent_hidden = false)
       entities.each do |e|
