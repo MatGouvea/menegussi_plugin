@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&icon_names=transition_fade" />
+    <meta charset="utf-8">
+    <title>Visualizador de Componente</title>
+    <script src="three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <style>
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            height: 100%;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        #interfaceContainer {
+            position: absolute;
+            bottom: 20px;
+            right: -25px;
+            display: flex;
+            flex-direction: row;
+            align-items: flex-end;
+            gap: 10px;
+            z-index: 100;
+        }
+
+        /* Bloco com slider, ícone e botão */
+        #controlsContainer {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        #explodeSlider {
+            writing-mode: bt-lr;
+            -webkit-appearance: slider-vertical;
+            appearance: slider-vertical;
+            height: 150px;
+            margin-bottom: 30px;
+            margin-top: 10px;
+            accent-color: #3A4A40;
+        }
+
+        /* Botão de XRay */
+        #toggleButton {
+            background-color: #fff;
+            border: 1px solid #ccc;
+            border-radius: 10px;
+            padding: 6px;
+            cursor: pointer;
+            color: #333;
+        }
+
+        #toggleButton.active {
+            background-color: #d4d4d4;
+            border: 1px solid #8c8c8c;
+        }
+
+        #toggle-labels-btn {
+            background-color: #fff;
+            border: 1px solid #ccc;
+            border-radius: 10px;
+            padding: 6px;
+            cursor: pointer;
+            color: #333;
+            margin-top: 5px;
+        }
+
+        #toggle-labels-btn.active {
+            background-color: #d4d4d4;
+            border: 1px solid #8c8c8c;
+        }
+
+        /* Botões de câmera */
+        #cameraButtons {
+            display: flex;
+            flex-direction: row;
+        }
+
+        .camera-btn img {
+            width: 24px;
+            height: 24px;
+        }
+
+        .camera-btn {
+            width: 40px;
+            height: 40px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            /* igual ao botão de XRay */
+            padding: 6px;
+            border: 1px solid #ccc;
+            background-color: #fff;
+            transition: background-color 0.3s;
+        }
+
+        .camera-btn:hover {
+            background-color: #f0f0f0;
+        }
+
+        .camera-btn:first-child {
+            border-radius: 10px 0 0 10px;
+        }
+
+        .camera-btn:last-child {
+            border-radius: 0 10px 10px 0;
+        }
+
+        #exportBtn {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            z-index: 10;
+            padding: 6px 12px;
+            font-size: 12px;
+            background: #3A4A40;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="viewer-container" style="position: relative; width: 100vw; height: 100vh;">
+        <canvas id="viewer"></canvas>
+    </div>
+    <button id="exportBtn">Exportar PNG</button>
+    <div id="interfaceContainer">
+        <div id="cameraButtons">
+            <button title="Vista Isométrica" id="isoButton" class="camera-btn"><img src="icons/iso.png"
+                    style="width: 24px;"></button>
+            <button title="Vista Frente" id="frontButton" class="camera-btn"><img src="icons/frente.png"
+                    style="width: 24px;"></button>
+            <button title="Vista Trás" id="backButton" class="camera-btn"><img src="icons/tras.png"
+                    style="width: 24px;"></button>
+        </div>
+
+        <div id="controlsContainer">
+            <img src="icons/dimensions.png" style="width: 20px;">
+            <input type="range" id="explodeSlider" min="0" max="250" value="0">
+            <button title="Ver Através" id="toggleButton">
+                <img src="icons/cube.png" style="width: 24px;">
+            </button>
+            <button title="Ver Etiquetas" id="toggle-labels-btn" class="active">
+                <img src="icons/label.png" style="width: 24px;">
+            </button>
+        </div>
+    </div>
+
+
+    <script>
+        const canvas = document.getElementById('viewer');
+        const renderer = new THREE.WebGLRenderer({
+            canvas,
+            antialias: true,
+            preserveDrawingBuffer: true
+        });
+
+        let focusedGroup = null;
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xffffff);
+
+        const aspect = window.innerWidth / window.innerHeight;
+        const camera = new THREE.OrthographicCamera(
+            -400 * aspect, 400 * aspect,
+            400, -400,
+            1, 5000
+        );
+        camera.position.set(300, 300, 300);
+        camera.lookAt(0, 0, 0);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.target.set(0, 0, 0);
+        controls.update();
+
+        let isXRayMode = false;
+        let explodedMeshes = [];
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+        scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.6);
+        directionalLight.position.set(1, 2, 3);
+        scene.add(directionalLight);
+        let explosionOrigin = new THREE.Vector3();
+
+        const viewerContainer = document.getElementById('viewer-container');
+
+        // Container para os labels HTML
+        const labelsContainer = document.createElement('div');
+        labelsContainer.style.position = 'absolute';
+        labelsContainer.style.top = '0';
+        labelsContainer.style.left = '0';
+        labelsContainer.style.pointerEvents = 'none'; // para não interferir no mouse
+        labelsContainer.style.width = '100%';
+        labelsContainer.style.height = '100%';
+        viewerContainer.appendChild(labelsContainer);
+
+        // SVG para desenhar as linhas
+        const linesSVG = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        linesSVG.style.position = 'absolute';
+        linesSVG.style.top = '0';
+        linesSVG.style.left = '0';
+        linesSVG.style.width = '100%';
+        linesSVG.style.height = '100%';
+        linesSVG.style.pointerEvents = 'none';
+        linesSVG.style.zIndex = '0';
+        viewerContainer.appendChild(linesSVG);
+
+
+        let labelOffsetSign = 1; // alterna lado para cada label
+
+        function clearLabels() {
+            while (labelsContainer.firstChild) {
+                labelsContainer.removeChild(labelsContainer.firstChild);
+            }
+            while (linesSVG.firstChild) {
+                linesSVG.removeChild(linesSVG.firstChild);
+            }
+        }
+
+
+        function updateLabels() {
+            const sideMargin = 120;
+            const minGap = 30;
+            const topMargin = 40;
+            const bottomMargin = 40;
+
+            const buckets = { left: [], right: [] };
+
+            explodedMeshes.forEach(group => {
+                const { element, line1, line2 } = group.userData;
+                if (!element || !line1 || !line2) return;
+
+                const box = new THREE.Box3().setFromObject(group);
+                const center = box.getCenter(new THREE.Vector3()).clone().project(camera);
+
+                const screenX = (center.x * 0.5 + 0.5) * window.innerWidth;
+                const screenY = (-center.y * 0.5 + 0.5) * window.innerHeight;
+
+                const side = screenX < window.innerWidth / 2 ? 'left' : 'right';
+                group.userData.offsetSide = side === 'right' ? 1 : -1;
+
+                buckets[side].push({ group, screenX, screenY });
+            });
+
+            const layoutSide = (items, side) => {
+                if (items.length === 0) return;
+
+                items.sort((a, b) => a.screenY - b.screenY);
+
+                for (let i = 0; i < items.length; i++) {
+                    const target = Math.max(items[i].screenY, topMargin);
+                    if (i === 0) {
+                        items[i].labelY = target;
+                    } else {
+                        items[i].labelY = Math.max(target, items[i - 1].labelY + minGap);
+                    }
+                }
+
+                const overflow = items[items.length - 1].labelY + bottomMargin - window.innerHeight;
+                if (overflow > 0) {
+                    for (let i = 0; i < items.length; i++) {
+                        items[i].labelY -= overflow;
+                    }
+                }
+
+                items.forEach(item => {
+                    const { group, screenX, labelY } = item;
+                    const { element, line1, line2, offsetSide } = group.userData;
+
+                    const labelX = offsetSide > 0
+                        ? window.innerWidth - sideMargin
+                        : sideMargin;
+
+                    element.style.left = `${labelX}px`;
+                    element.style.top = `${labelY}px`;
+                    element.style.transform = 'translate(-50%, -50%)';
+
+                    const rect = element.getBoundingClientRect();
+                    const connectX = labelX + (offsetSide > 0 ? -rect.width / 2 : rect.width / 2);
+                    const elbowX = offsetSide > 0 ? screenX + 40 : screenX - 40;
+
+                    line1.setAttribute('x1', screenX);
+                    line1.setAttribute('y1', item.screenY);
+                    line1.setAttribute('x2', elbowX);
+                    line1.setAttribute('y2', item.screenY);
+
+                    line2.setAttribute('x1', elbowX);
+                    line2.setAttribute('y1', item.screenY);
+                    line2.setAttribute('x2', connectX);
+                    line2.setAttribute('y2', labelY);
+                });
+            };
+
+            layoutSide(buckets.left, 'left');
+            layoutSide(buckets.right, 'right');
+        }
+
+
+        function loadGroupedGeometry(data) {
+            const groups = data.parts;
+            console.log("Dados recebidos:", groups.map(g => g.hidden));
+
+            // Limpa cena e labels
+            while (scene.children.length > 0) scene.remove(scene.children[0]);
+            scene.add(ambientLight);
+            scene.add(directionalLight);
+            explodedMeshes = [];
+            clearLabels();
+
+            const mainGroup = new THREE.Group();
+
+            labelOffsetSign = 1; // reinicia alternância
+
+            groups.forEach(part => {
+                if (part.hidden) return;
+
+                const triangles = part.triangles;
+                const vertices = [];
+                triangles.forEach(tri => {
+                    tri.forEach(([x, y, z]) => {
+                        vertices.push(x, y, z);
+                    });
+                });
+
+                const geometry = new THREE.BufferGeometry();
+                geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+                geometry.computeVertexNormals();
+                geometry.rotateX(-Math.PI / 2);
+
+                const mesh = new THREE.Mesh(
+                    geometry,
+                    new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide })
+                );
+
+                const edges = new THREE.EdgesGeometry(geometry, 1);
+                const lines = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
+
+                const pieceGroup = new THREE.Group();
+                pieceGroup.add(mesh);
+                pieceGroup.add(lines);
+
+                const center = new THREE.Box3().setFromObject(pieceGroup).getCenter(new THREE.Vector3());
+                const direction = center.clone().normalize();
+                pieceGroup.userData = { direction };
+                pieceGroup.userData.level = part.level || 'voyager';
+
+                explodedMeshes.push(pieceGroup);
+                mainGroup.add(pieceGroup);
+
+                // Criar label HTML se existir gbsflagged
+                if (part.gbsflagged) {
+                    const label = document.createElement('div');
+
+                    const gbsrefLine = part.gbsref ? `(${part.gbsref})` : "";
+                    const dimsLine = (part.gbsx && part.gbsy && part.gbsz)
+                        ? `${part.gbsx} x ${part.gbsy} x ${part.gbsz} mm`
+                        : "";
+
+                    label.innerHTML = `
+                    <div style="display: flex; align-items: center;">
+                        <div style="
+                        font-weight: bold;
+                        background-color: #eee;
+                        border-radius: 4px;
+                        padding: 4px 6px;
+                        min-width: 24px;
+                        text-align: center;
+                        margin-right: 8px;
+                        ">${part.gbsflagged}</div>
+                        <div style="display: flex; flex-direction: column; justify-content: center;">
+                        ${part.gbsref ? `<div style="font-weight: bold;">${part.gbsref}</div>` : ""}
+                        ${(part.gbsx && part.gbsy && part.gbsz) ? `<div style="font-size: 11px; color: #555;">${part.gbsx} x ${part.gbsy} x ${part.gbsz} mm</div>` : ""}
+                        </div>
+                    </div>
+                    `;
+
+
+                    label.style.position = 'absolute';
+                    label.style.padding = '2px 6px';
+                    label.style.backgroundColor = 'white';
+                    label.style.color = 'black';
+                    label.style.fontSize = '11px';
+                    label.style.padding = '2px 4px';
+                    label.style.borderRadius = '6px';
+                    label.style.border = '1px solid #aaa';
+                    label.style.whiteSpace = 'nowrap';
+                    label.style.pointerEvents = 'none';
+                    labelsContainer.appendChild(label);
+
+                    pieceGroup.userData.offsetSide = labelOffsetSign;
+                    pieceGroup.userData.element = label;
+
+                    labelOffsetSign = -labelOffsetSign;
+
+                    const line1 = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                    const line2 = document.createElementNS("http://www.w3.org/2000/svg", "line");
+
+                    line1.setAttribute("stroke", "#888");
+                    line1.setAttribute("stroke-width", "1");
+                    line2.setAttribute("stroke", "#888");
+                    line2.setAttribute("stroke-width", "1");
+                    linesSVG.appendChild(line1);
+                    linesSVG.appendChild(line2);
+
+                    pieceGroup.userData.center = center;
+                    pieceGroup.userData.line1 = line1;
+                    pieceGroup.userData.line2 = line2;
+
+                }
+            });
+
+            scene.add(mainGroup);
+            console.log("Peças carregadas:", explodedMeshes.length);
+
+            // Calcular o bounding box total das peças e definir o centro da explosão
+            const totalBox = new THREE.Box3();
+            explodedMeshes.forEach(group => {
+                const box = new THREE.Box3().setFromObject(group);
+                totalBox.union(box);
+            });
+            explosionOrigin.copy(totalBox.getCenter(new THREE.Vector3()));
+
+            // Centraliza câmera
+            const bbox = new THREE.Box3().setFromObject(mainGroup);
+            const center = bbox.getCenter(new THREE.Vector3());
+            const size = bbox.getSize(new THREE.Vector3());
+            const maxDim = Math.max(size.x, size.y, size.z);
+            const frustumSize = maxDim * 1.5;
+
+            // Atualiza os parâmetros ortográficos da câmera
+            camera.left = (-frustumSize * aspect) / 2;
+            camera.right = (frustumSize * aspect) / 2;
+            camera.top = frustumSize / 2;
+            camera.bottom = -frustumSize / 2;
+            camera.near = -5000;
+            camera.far = 5000;
+            camera.updateProjectionMatrix();
+
+            // Define uma posição isométrica confortável
+            const distance = size.length() * 1.2;
+            const offset = new THREE.Vector3(1, 1, 1).normalize().multiplyScalar(distance);
+            camera.position.copy(center.clone().add(offset));
+
+            // Foca no centro do modelo
+            controls.target.copy(center);
+            controls.update();
+
+            animate();
+            renderer.domElement.addEventListener('click', onCanvasClick, false);
+        }
+
+
+        function applyExplosion(factor) {
+            const totalBox = new THREE.Box3();
+            explodedMeshes.forEach(group => {
+                const box = new THREE.Box3().setFromObject(group);
+                totalBox.union(box);
+            });
+            const centerGlobal = totalBox.getCenter(new THREE.Vector3());
+
+            explodedMeshes.forEach(group => {
+                const center = new THREE.Box3().setFromObject(group).getCenter(new THREE.Vector3());
+                const dir = new THREE.Vector3().subVectors(center, centerGlobal).normalize();
+
+                const level = group.userData.level || 'voyager';
+                const levelMultiplier = (level === 'root') ? 2 : 1;
+
+                group.position.copy(dir.multiplyScalar(factor * levelMultiplier));
+            });
+        }
+
+
+        function toggleXRay() {
+            isXRayMode = !isXRayMode;
+
+            const button = document.getElementById("toggleButton");
+            button.classList.toggle("active", isXRayMode); // <-- aqui
+
+            explodedMeshes.forEach(group => {
+                group.children.forEach(obj => {
+                    if (obj instanceof THREE.Mesh) {
+                        obj.material = new THREE.MeshBasicMaterial({
+                            color: 0xffffff,
+                            side: THREE.DoubleSide,
+                            transparent: isXRayMode,
+                            opacity: isXRayMode ? 0.15 : 1,
+                            depthWrite: !isXRayMode
+                        });
+                    }
+                });
+            });
+        }
+
+
+        document.getElementById("toggleButton").addEventListener("click", toggleXRay);
+        document.getElementById("explodeSlider").addEventListener("input", (e) => {
+            const value = parseFloat(e.target.value);
+            applyExplosion(value / 10); // valor direto, já invertido pelo min/max
+        });
+
+
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.render(scene, camera);
+            updateLabels(); // Atualiza posição dos labels a cada frame
+        }
+
+
+        // Recebe dados do SketchUp
+        window.onload = () => {
+            if (window.sketchup && sketchup.request_geometry) {
+                sketchup.request_geometry();
+            } else {
+                console.error("SketchUp interface não disponível.");
+            }
+        };
+
+
+        function setCameraView(direction) {
+            if (!controls || !camera || !scene) return;
+
+            // Calcular o centro real do modelo
+            const box = new THREE.Box3().setFromObject(scene);
+            const center = box.getCenter(new THREE.Vector3());
+            const size = box.getSize(new THREE.Vector3()).length();
+            const distance = size * 1.2; // distância confortável com margem
+
+            let offset;
+
+            switch (direction) {
+                case "iso":
+                    offset = new THREE.Vector3(1, 1, 1).normalize().multiplyScalar(distance);
+                    break;
+                case "front":
+                    offset = new THREE.Vector3(0, 0, 1).multiplyScalar(distance);
+                    break;
+                case "back":
+                    offset = new THREE.Vector3(0, 0, -1).multiplyScalar(distance);
+                    break;
+                default:
+                    return;
+            }
+
+            camera.position.copy(center.clone().add(offset));
+            controls.target.copy(center); // centraliza o foco da órbita
+            camera.lookAt(center);
+            controls.update();
+        }
+
+
+        document.getElementById('isoButton').addEventListener('click', () => {
+            setCameraView('iso');
+        });
+
+        document.getElementById('frontButton').addEventListener('click', () => {
+            setCameraView('front');
+        });
+
+        document.getElementById('backButton').addEventListener('click', () => {
+            setCameraView('back');
+        });
+
+
+        let labelsVisible = true;
+
+        document.getElementById('toggle-labels-btn').addEventListener('click', () => {
+            labelsVisible = !labelsVisible;
+
+            const button = document.getElementById("toggle-labels-btn");
+            button.classList.toggle("active", labelsVisible); // <-- aqui
+
+            explodedMeshes.forEach(group => {
+                if (group.userData.element) {
+                    group.userData.element.style.display = labelsVisible ? 'block' : 'none';
+                }
+
+                if (group.userData.line1) {
+                    group.userData.line1.style.display = labelsVisible ? 'block' : 'none';
+                }
+                if (group.userData.line2) {
+                    group.userData.line2.style.display = labelsVisible ? 'block' : 'none';
+                }
+
+            });
+        });
+
+
+        document.getElementById('exportBtn').addEventListener('click', () => {
+            const target = document.getElementById('viewer-container');
+
+            html2canvas(target, {
+                useCORS: true,
+            }).then(canvas => {
+                const link = document.createElement('a');
+                link.download = 'visualizacao.png';
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            });
+        });
+
+
+        function onCanvasClick(event) {
+            // Calcula a posição do clique normalizada (-1 a 1)
+            mouse.x = (event.clientX / renderer.domElement.clientWidth) * 2 - 1;
+            mouse.y = -(event.clientY / renderer.domElement.clientHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+
+            // Checa interseções apenas com os meshes dos grupos
+            const intersects = raycaster.intersectObjects(
+                explodedMeshes.map(g => g.children.find(c => c instanceof THREE.Mesh)),
+                true
+            );
+
+            if (intersects.length > 0) {
+                const mesh = intersects[0].object;
+                const group = explodedMeshes.find(g => g.children.includes(mesh));
+                if (!group) return;
+
+                // Se clicou novamente na mesma peça, desfoca
+                if (focusedGroup === group) {
+                    resetFocus();
+                    return;
+                }
+
+                focusOnGroup(group);
+            } else {
+                // Clicou fora de qualquer peça
+                resetFocus();
+            }
+        }
+
+        
+        function focusOnGroup(group) {
+            focusedGroup = group;
+
+            explodedMeshes.forEach(g => {
+                const isTarget = g === group;
+                g.visible = isTarget;
+
+                // Esconde label/linhas se não for a peça em foco
+                if (g.userData.element) {
+                    g.userData.element.style.display = isTarget && labelsVisible ? 'block' : 'none';
+                }
+                if (g.userData.line1) g.userData.line1.style.display = isTarget ? 'block' : 'none';
+                if (g.userData.line2) g.userData.line2.style.display = isTarget ? 'block' : 'none';
+            });
+        }
+
+
+        function resetFocus() {
+            if (!focusedGroup) return;
+
+            explodedMeshes.forEach(g => {
+                g.visible = true;
+
+                if (g.userData.element) {
+                    g.userData.element.style.display = labelsVisible ? 'block' : 'none';
+                }
+                if (g.userData.line1) g.userData.line1.style.display = labelsVisible ? 'block' : 'none';
+                if (g.userData.line2) g.userData.line2.style.display = labelsVisible ? 'block' : 'none';
+            });
+            focusedGroup = null;
+        }
+    </script>
+</body>
+
+</html>
