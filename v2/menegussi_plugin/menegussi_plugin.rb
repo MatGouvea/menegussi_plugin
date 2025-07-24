@@ -172,20 +172,36 @@ module MenegussiPlugin
         (value_cm.to_f * 10).round(2)
       end
 
-      # Função auxiliar para coletar atributos GBS
-      get_gbs_attributes = lambda do |entity|
+      def self.inches_to_mm(value_in)
+        return nil if value_in.nil?
+        (value_in.to_f * 25.4).round(2)
+      end
+
+      # Função auxiliar para coletar atributos GBS e medidas
+      get_gbs_attributes = lambda do |entity, level|
         if entity.respond_to?(:attribute_dictionaries)
-          {
-            gbsflagged: entity.get_attribute("dynamic_attributes", "gbsflagged"),
-            gbsref:     entity.get_attribute("dynamic_attributes", "gbsref"),
-            gbsx:       to_mm(entity.get_attribute("dynamic_attributes", "gbsx")),
-            gbsy:       to_mm(entity.get_attribute("dynamic_attributes", "gbsy")),
-            gbsz:       to_mm(entity.get_attribute("dynamic_attributes", "gbsz"))
-          }
+          if level == "voyager"
+            {
+              gbsflagged: entity.get_attribute("dynamic_attributes", "gbsflagged"),
+              gbsref:     entity.get_attribute("dynamic_attributes", "gbsref"),
+              gbsx:       inches_to_mm(entity.get_attribute("dynamic_attributes", "limite_x")),
+              gbsy:       inches_to_mm(entity.get_attribute("dynamic_attributes", "limite_y")),
+              gbsz:       inches_to_mm(entity.get_attribute("dynamic_attributes", "limite_z"))
+            }
+          else
+            {
+              gbsflagged: entity.get_attribute("dynamic_attributes", "gbsflagged"),
+              gbsref:     entity.get_attribute("dynamic_attributes", "gbsref"),
+              gbsx:       to_mm(entity.get_attribute("dynamic_attributes", "gbsx")),
+              gbsy:       to_mm(entity.get_attribute("dynamic_attributes", "gbsy")),
+              gbsz:       to_mm(entity.get_attribute("dynamic_attributes", "gbsz"))
+            }
+          end
         else
           { gbsflagged: nil, gbsref: nil, gbsx: nil, gbsy: nil, gbsz: nil }
         end
       end
+
 
 
 
@@ -207,7 +223,7 @@ module MenegussiPlugin
           8.times { |i| transformed_box.add(box.corner(i).transform(transform)) }
           all_boxes_centers << transformed_box.center.to_a
 
-          attrs = get_gbs_attributes.call(e)
+          attrs = get_gbs_attributes.call(e, "root")
 
           parts << {
             hidden: false,
@@ -243,7 +259,7 @@ module MenegussiPlugin
           8.times { |i| transformed_box.add(original_box.corner(i).transform(transform)) }
           all_boxes_centers << transformed_box.center.to_a
 
-          attrs = get_gbs_attributes.call(child)
+          attrs = get_gbs_attributes.call(child, "voyager")
 
           parts << {
             hidden: false,
